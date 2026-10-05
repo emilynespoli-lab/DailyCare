@@ -78,6 +78,7 @@ nav button[aria-selected="true"]{background:var(--petal);color:var(--rose)}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script>
 const K2 = 'meu-cuidado:v2', K1 = 'meu-cuidado:v1';
+const CHALLENGE_START = '2026-10-05', CHALLENGE_END = '2026-12-31';
 const MOODS = ['Mal', 'Baixo', 'Ok', 'Bem', 'Ótimo'], WD = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const TABS = [['cuidado', 'Cuidado'], ['atividades', 'Atividades'], ['comer', 'Comer'], ['treino', 'Treino'], ['evolucao', 'Evolução']];
 const DEF = () => ({cfgTs: 0, goal: 0, plan: {}, entries: {}, habits: [
@@ -89,7 +90,7 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const num = v => { const n = parseFloat(String(v).replace(',', '.')); return isFinite(n) && n >= 0 ? n : null; };
 const fmt = n => String(Math.round(n * 10) / 10).replace('.', ',');
 const FL = '<svg class="fl"><use href="#fl"/></svg>';
-let state = load(), view = 'cuidado', date = iso(new Date()), exSel = '';
+let state = load(), view = 'cuidado', date = '', exSel = '';
 
 function load() {
   try {
@@ -113,6 +114,11 @@ function iso(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).t
 function parse(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
 function shift(s, n) { const d = parse(s); d.setDate(d.getDate() + n); return iso(d); }
 const todayStr = () => iso(new Date());
+const challengeToday = () => todayStr() < CHALLENGE_START ? CHALLENGE_START : todayStr() > CHALLENGE_END ? CHALLENGE_END : todayStr();
+const challengeDays = () => Math.round((parse(CHALLENGE_END) - parse(CHALLENGE_START)) / 86400000) + 1;
+const challengeElapsed = () => todayStr() < CHALLENGE_START ? 0 : Math.round((parse(challengeToday()) - parse(CHALLENGE_START)) / 86400000) + 1;
+const inChallenge = d => d >= CHALLENGE_START && d <= CHALLENGE_END;
+date = challengeToday();
 const longDate = s => parse(s).toLocaleDateString('pt-BR', {weekday: 'long', day: 'numeric', month: 'long'});
 const shortDate = s => parse(s).toLocaleDateString('pt-BR', {day: 'numeric', month: 'short'});
 
@@ -124,7 +130,7 @@ function hasData(d) {
 function update(d, fn) { const e = JSON.parse(JSON.stringify(entry(d))); fn(e); e.ts = Date.now(); state.entries[d] = e; save(); }
 const kcalOf = d => entry(d).meals.reduce((s, m) => s + m.kcal, 0);
 function doneCount(d) { const ids = new Set(state.habits.map(h => h.id)); return entry(d).done.filter(i => ids.has(i)).length; }
-function streak() { let d = todayStr(), n = 0; if (!doneCount(d)) d = shift(d, -1); while (doneCount(d) > 0) { n++; d = shift(d, -1); } return n; }
+function streak() { let d = challengeToday(), n = 0; if (!challengeElapsed()) return 0; if (!doneCount(d)) d = shift(d, -1); while (d >= CHALLENGE_START && doneCount(d) > 0) { n++; d = shift(d, -1); } return n; }
 const sortedDates = () => Object.keys(state.entries).filter(hasData).sort();
 function lastLoad(x, d) {
   for (const k of Object.keys(state.entries).filter(k => k <= d).sort().reverse()) { const w = (state.entries[k].work || {})[x.id]; if (w && w.load != null) return w.load; }
@@ -153,8 +159,8 @@ function render() {
   $('#app').innerHTML = (view === 'evolucao' || view === 'ajustes' ? '' : dateBar()) + f();
 }
 function dateBar() {
-  const t = date === todayStr();
-  return `<div class="daynav"><button class="icon" data-nav="-1" aria-label="Dia anterior">‹</button><h2>${longDate(date)}</h2><button class="icon" data-nav="1" aria-label="Próximo dia" ${t ? 'disabled' : ''}>›</button></div>${t ? '' : '<button class="link" data-today>Voltar para hoje</button>'}`;
+  const t = date === challengeToday();
+  return `<div class="daynav"><button class="icon" data-nav="-1" aria-label="Dia anterior" ${date <= CHALLENGE_START ? 'disabled' : ''}>‹</button><h2>${longDate(date)}</h2><button class="icon" data-nav="1" aria-label="Próximo dia" ${date >= challengeToday() ? 'disabled' : ''}>›</button></div>${t ? '' : '<button class="link" data-today>Ir para o dia atual</button>'}`;
 }
 function vCuidado() {
   const e = entry(date);
@@ -172,6 +178,7 @@ function vAtiv() {
 }
 function vComer() {
   const e = entry(date), tot = kcalOf(date), g = state.goal;
+  const history = Object.keys(state.entries).filter(d => inChallenge(d) && d <= todayStr() && entry(d).meals.length).sort().reverse().slice(0, 14);
   const st = g && tot ? (tot <= g ? '<span class="ok">Dentro da meta</span>' : '<span class="over">Acima da meta</span>') : '<span class="empty">Defina uma meta abaixo</span>';
   return `<h2 class="sec">Alimentação do dia</h2>
   <div class="sum"><div><b>${tot}</b> kcal${g ? ` <small>de ${g}</small>` : ''}</div>${st}</div>
@@ -180,7 +187,8 @@ function vComer() {
   <input type="text" id="mealName" placeholder="Prato (ex.: arroz, feijão e frango)" maxlength="80" required>
   <div class="add" style="margin:0"><input type="number" id="mealKcal" inputmode="numeric" min="0" placeholder="calorias (kcal)" required><button class="btn" type="submit">Adicionar</button></div></form>
   <h2 class="sec">Me alimentei certo hoje?</h2><div class="moods"><button class="mood" data-ate="1" aria-pressed="${e.ate === true}">Sim</button><button class="mood" data-ate="0" aria-pressed="${e.ate === false}">Não</button></div>
-  <h2 class="sec">Minha meta diária</h2><div class="inl"><input type="number" id="goal" inputmode="numeric" min="0" placeholder="0" value="${g || ''}" aria-label="Meta diária em kcal"><span>kcal</span></div>`;
+  <h2 class="sec">Minha meta diária</h2><div class="inl"><input type="number" id="goal" inputmode="numeric" min="0" placeholder="0" value="${g || ''}" aria-label="Meta diária em kcal"><span>kcal</span></div>
+  <h2 class="sec">Histórico de calorias</h2>${history.map(d => { const k = kcalOf(d); return `<div class="row"><span>${longDate(d)} <small>${entry(d).meals.length} ${entry(d).meals.length === 1 ? 'refeição' : 'refeições'}</small></span><b>${k} kcal</b>${g ? `<small class="${k <= g ? 'ok' : 'over'}">${k <= g ? 'Na meta' : 'Acima'}</small>` : ''}</div>`; }).join('') || '<p class="empty">Seu histórico aparecerá depois que registrar refeições.</p>'}`;
 }
 function vTreino() {
   const wd = parse(date).getDay(), plan = state.plan[wd] || [], e = entry(date);
@@ -192,21 +200,30 @@ function vTreino() {
   <div class="add" style="margin:0"><input type="number" id="exSets" inputmode="numeric" min="1" placeholder="séries" required><input type="number" id="exReps" inputmode="numeric" min="1" placeholder="reps" required><input type="number" id="exLoad" inputmode="decimal" step="0.5" min="0" placeholder="kg"></div><button class="btn" type="submit">Adicionar ao treino</button></form>`;
 }
 function vEvo() {
-  const ds = sortedDates(), wp = ds.filter(d => state.entries[d].weight).slice(-60).map(d => ({d, y: state.entries[d].weight}));
+  const ds = sortedDates().filter(d => inChallenge(d) && d <= todayStr()), wp = ds.filter(d => state.entries[d].weight).slice(-60).map(d => ({d, y: state.entries[d].weight}));
   const lm = {}; ds.forEach(d => Object.values(state.entries[d].work || {}).forEach(w => { if (w.name && w.load != null) (lm[w.name] = lm[w.name] || []).push({d, y: w.load}); }));
   const names = Object.keys(lm); if (!names.includes(exSel)) exSel = names[0] || '';
-  const g = state.goal, t = todayStr(), bars = [];
-  for (let i = 13; i >= 0; i--) { const d = shift(t, -i), k = kcalOf(d); bars.push({l: shortDate(d), v: k, c: !g || k <= g ? 'var(--leaf)' : 'var(--over)'}); }
+  const g = state.goal, t = challengeToday(), elapsed = challengeElapsed(), total = challengeDays(), bars = [];
+  for (let i = Math.max(1, Math.min(14, elapsed)) - 1; i >= 0; i--) { const d = shift(t, -i), k = elapsed ? kcalOf(d) : 0; bars.push({l: shortDate(d), v: k, c: !g || k <= g ? 'var(--leaf)' : 'var(--over)'}); }
   const md = ds.filter(d => entry(d).meals.length), within = g ? md.filter(d => kcalOf(d) <= g).length : 0, right = ds.filter(d => state.entries[d].ate === true).length;
-  const wk = []; for (let w = 7; w >= 0; w--) { let s = 0; for (let i = 0; i < 7; i++) s += state.habits.length ? doneCount(shift(t, -(w * 7 + i))) / state.habits.length : 0; wk.push({l: shortDate(shift(t, -(w * 7 + 6))), v: s / 7 * 100, c: 'var(--rose)'}); }
-  const start = shift(t, -34), pad = parse(start).getDay(); let cells = '<div class="cell blank"></div>'.repeat(pad);
-  for (let i = 0; i < 35; i++) { const d = shift(start, i), f = state.habits.length ? doneCount(d) / state.habits.length : 0;
-    cells += `<button class="cell${hasData(d) ? ' has' : ''}${d === t ? ' today' : ''}" ${f ? `style="background:color-mix(in srgb,var(--rose) ${Math.round(25 + f * 65)}%,#fff)"` : ''} data-open="${d}" aria-label="${shortDate(d)}">${parse(d).getDate()}</button>`; }
+  const wk = [], weekCount = Math.ceil(Math.max(elapsed, 1) / 7);
+  for (let w = 0; w < weekCount; w++) { const first = w * 7, last = Math.min(first + 6, Math.max(elapsed - 1, 0)), days = elapsed ? last - first + 1 : 1; let s = 0;
+    for (let i = first; elapsed && i <= last; i++) s += state.habits.length ? doneCount(shift(CHALLENGE_START, i)) / state.habits.length : 0;
+    wk.push({l: shortDate(shift(CHALLENGE_START, first)), v: s / days * 100, c: 'var(--rose)'}); }
+  const pad = parse(CHALLENGE_START).getDay(); let cells = '<div class="cell blank"></div>'.repeat(pad);
+  for (let i = 0; i < total; i++) { const d = shift(CHALLENGE_START, i), available = d <= todayStr(), f = available && state.habits.length ? doneCount(d) / state.habits.length : 0;
+    cells += `<button class="cell${available && hasData(d) ? ' has' : ''}${d === todayStr() ? ' today' : ''}" ${f ? `style="background:color-mix(in srgb,var(--rose) ${Math.round(25 + f * 65)}%,#fff)"` : ''} ${available ? `data-open="${d}"` : 'disabled'} aria-label="${shortDate(d)}">${parse(d).getDate()}</button>`; }
   const wl = wp.length > 1 ? wp[wp.length - 1].y - wp[0].y : 0;
-  return `<h2 class="sec">Peso (kg)</h2><div class="card">${lineChart(wp)}</div>${wp.length > 1 ? `<p class="empty">Último: ${fmt(wp[wp.length - 1].y)} kg · variação no período: ${wl > 0 ? '+' : ''}${fmt(wl)} kg</p>` : ''}
+  const trainingDays = ds.filter(d => Object.values(state.entries[d].work || {}).some(w => w.done)).length;
+  const activityMinutes = ds.reduce((sum, d) => sum + entry(d).acts.reduce((mins, a) => mins + (a.min || 0), 0), 0);
+  return `<h2 class="sec">Desafio: 05/10/2026 a 31/12/2026</h2>
+  <div class="sum"><div><b>${elapsed}</b> / ${total} dias</div><small>${total - elapsed} restantes</small></div>
+  <div class="stats"><div class="stat"><b>${ds.length}</b><span>dias com registros</span></div><div class="stat"><b>${trainingDays}</b><span>dias com treino</span></div></div>
+  <div class="stats"><div class="stat"><b>${activityMinutes}</b><span>minutos de atividade</span></div><div class="stat"><b>${md.length}</b><span>dias com refeições</span></div></div>
+  <h2 class="sec">Peso (kg)</h2><div class="card">${lineChart(wp)}</div>${wp.length > 1 ? `<p class="empty">Último: ${fmt(wp[wp.length - 1].y)} kg · variação no período: ${wl > 0 ? '+' : ''}${fmt(wl)} kg</p>` : ''}
   <h2 class="sec">Carga nos treinos</h2>${names.length ? `<select id="exSel" aria-label="Exercício">${names.map(n => `<option ${n === exSel ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select><div class="card" style="margin-top:8px">${lineChart(lm[exSel] || [])}</div>` : '<p class="empty">Marque exercícios como feitos na aba Treino para ver a evolução da carga.</p>'}
   <h2 class="sec">Cuidado</h2><div class="stats"><div class="stat"><b>${streak()}</b><span>dias seguidos com cuidado</span></div><div class="stat"><b>${ds.length}</b><span>dias registrados</span></div></div>
-  <p class="empty">Média de hábitos feitos por semana (%), últimas 8 semanas</p><div class="card">${barChart(wk, 0)}</div>
+  <p class="empty">Média de hábitos feitos por semana (%) durante o desafio</p><div class="card">${barChart(wk, 0)}</div>
   <div class="grid">${WD.map(w => `<div class="wd">${w[0]}</div>`).join('')}${cells}</div>
   <h2 class="sec">Alimentação</h2><div class="card">${barChart(bars, g)}</div>
   <div class="stats"><div class="stat"><b>${g ? within + '/' + md.length : '–'}</b><span>dias dentro da meta</span></div><div class="stat"><b>${right}</b><span>dias em que me alimentei certo</span></div></div>`;
@@ -223,15 +240,15 @@ function vAjustes() {
 document.addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t) return; const d = t.dataset;
   if (d.view) { view = d.view; render(); window.scrollTo(0, 0); }
-  else if (d.nav) { const n = shift(date, +d.nav); if (n <= todayStr()) { date = n; render(); } }
-  else if ('today' in d) { date = todayStr(); render(); }
-  else if (d.open) { date = d.open; view = 'cuidado'; render(); window.scrollTo(0, 0); }
+  else if (d.nav) { const n = shift(date, +d.nav); if (d.nav < 0 ? inChallenge(n) : n <= challengeToday()) { date = n; render(); } }
+  else if ('today' in d) { date = challengeToday(); render(); }
+  else if (d.open && inChallenge(d.open) && d.open <= todayStr()) { date = d.open; view = 'cuidado'; render(); window.scrollTo(0, 0); }
   else if (d.habit) { update(date, e => { const i = e.done.indexOf(d.habit); i >= 0 ? e.done.splice(i, 1) : e.done.push(d.habit); }); render(); }
   else if (d.mood) { update(date, e => { e.mood = e.mood === +d.mood ? null : +d.mood; }); render(); }
   else if (d.ate) { const v = d.ate === '1'; update(date, e => { e.ate = e.ate === v ? null : v; }); render(); }
   else if (d.delact) { update(date, e => { e.acts = e.acts.filter(a => a.id !== d.delact); }); render(); }
   else if (d.delmeal) { update(date, e => { e.meals = e.meals.filter(m => m.id !== d.delmeal); }); render(); }
-  else if (d.wd) { const w = +d.wd, tw = new Date().getDay(); date = shift(todayStr(), -((tw - w + 7) % 7)); render(); }
+  else if (d.wd) { const w = +d.wd; let target = shift(date, w - parse(date).getDay()); if (target < CHALLENGE_START) target = shift(target, 7); if (target > CHALLENGE_END) target = shift(target, -7); date = target; render(); }
   else if (d.done) {
     const x = (state.plan[parse(date).getDay()] || []).find(q => q.id === d.done), inp = document.querySelector(`.load[data-ex="${d.done}"]`);
     if (x) { update(date, e => { const w = e.work[x.id] || {}; w.name = x.name; w.load = num(inp && inp.value); w.done = !w.done; e.work[x.id] = w; }); render(); }
