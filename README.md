@@ -14,7 +14,7 @@ vários aparelhos, ative a sincronização com o Supabase (passo 2).
    git add .
    git commit -m "Primeira versão"
    git branch -M main
-   git remote add origin https://github.com/SEU-USUARIO/meu-cuidado.git
+   git remote add origin [https://github.com/SEU-USUARIO/meu-cuidado.git](https://emilynespoli-lab.github.io/DailyCare/)
    git push -u origin main
    ```
    Sem terminal: **Add file > Upload files**.
