@@ -1,7 +1,7 @@
 /* Sincronização na nuvem (opcional, veja o README).
    Preencha com os dados do seu projeto Supabase. */
-const SUPABASE_URL = https://shstgohdqbgkejolplcg.supabase.co;
-const SUPABASE_ANON_KEY = sb_publishable_zAtkOK033rUc-bFRu3OBXA_E1_OUpMM;
+const SUPABASE_URL = 'https://shstgohdqbgkejolplcg.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_zAtkOK033rUc-bFRu3OBXA_E1_OUpMM';
 
 /* ---------- nuvem (Supabase) ---------- */
 const cloudOn = !!(SUPABASE_URL && SUPABASE_ANON_KEY && typeof supabase !== 'undefined');
